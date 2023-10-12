@@ -1,167 +1,203 @@
+import os
+
+
 import requests
+import json
+# from datetime import datetime
 from abc import ABC, abstractmethod
+
+
+class Vacancy:
+
+    def __init__(self, name, url, salary, requirements):
+        if isinstance(name, str):
+            self.name = name
+            self.url = url
+            self.requirements = requirements
+        if isinstance(salary, int):
+            self.salary = salary
+
+    def __eq__(self, other):
+        return self.url == other.url
+
+    def __lt__(self, other):
+        return self.salary < other.salary
+
+    def __le__(self, other):
+        return self.salary <= other.salary
+
+    def __repr__(self):
+        return f'{self.name} {self.salary} {self.url}\n'
+
+    def to_json(self):
+        return {
+            'name': self.name,
+            'url': self.url,
+            'salary': self.salary,
+            'requirements': self.requirements,
+        }
+
+    @classmethod
+    def from_json(cls, file):
+        with open(file, 'r', encoding='utf-8') as f:
+            vacancies = json.load(f)
+        output = []
+        for vacancy in vacancies:
+            tmp = cls(vacancy['name'], vacancy['url'], vacancy['salary'], vacancy['requirements'])
+            output.append(tmp)
+            output.sort(reverse=True)
+        return output
 
 
 class API(ABC):
 
     @abstractmethod
-    def get_vacancies(self):
-        """"""
+    def get_vacancies(self, words):
+        pass
+
+    @abstractmethod
+    def format_vacancies(self):
         pass
 
 
-class Vacancy:
-    def __init__(self, name, url_vacancy, salary, requirements):
-        self.name = name
-        self.url_vacancy = url_vacancy
-        self.salary = salary
-        self.requirements = requirements
-
-    def __repr__(self):
-        return f'{__class__.__name__()}:{self.name} {self.salary}'
-
-
 class HeadHunterAPI(API):
-    def __init__(self, name, page, top_n):
-        super().__init__(name, page, top_n)
-        self.url = 'https://api.hh.ru'
+    def __init__(self):
+        self.params = {
+            'per_page': 100,
+            'page': 1
+        }
+        self.url = 'https://api.hh.ru/vacancies/'
+        self.vacancies = []
 
-    def get_vacancies(self):
-        """"""
-
-        data = requests.get(f'{self.url}/vacancies', params={'text': self.name, 'page': self.page, 'per_page': self.top_n}).json()
-        return data
-
-    def load_vacancy(self):
-        """"""
-        data = self.get_vacancies()
-        vacancies = []
-        for vacancy in data.get('items', []):
-            published_at = datetime.strptime(vacancy['published_at'], "%Y-%m-%dT%H:%M:%S%z")
-            vacancy_info = {
-                'id': vacancy['id'],
-                'name': vacancy['name'],
-                'solary_ot': vacancy['salary']['from'] if vacancy.get('salary') else None,
-                'solary_do': vacancy['salary']['to'] if vacancy.get('salary') else None,
-                'responsibility': vacancy['snippet']['responsibility'],
-                'data': published_at.strftime("%d.%m.%Y")
-            }
-            vacancies.append(vacancy_info)
-
+    def get_vacancies(self, words):
+        """
+        """
+        self.params['text'] = words
+        req = requests.get(self.url, params=self.params)
+        vacancies = json.loads(req.text)['items']
+        self.vacancies = vacancies
         return vacancies
 
-class Super_job(Vakancy, APIManager):
-    def __init__(self, name, page, top_n):
-        super().__init__(name, page, top_n)
+    def format_vacancies(self):
+        result = []
+        for vacancy in self.vacancies:
+            if vacancy['salary'] is None:
+                salary_ = 0
+            elif vacancy['salary']['to']:
+                salary_ = int(vacancy['salary']['to'])
+            elif vacancy['salary']['from']:
+                salary_ = int(vacancy['salary']['from'])
+            else:
+                salary_ = 0
+
+            tmp = Vacancy(vacancy['name'], f'https://hh.ru/vacancy/{vacancy["id"]}', salary_,
+                          vacancy['snippet']['requirement'])
+            result.append(tmp)
+        return result
+
+
+class SuperJobAPI(API):
+    def __init__(self):
+        self.headers = {
+            'Host': 'api.superjob.ru',
+            'X-Api-App-Id': os.getenv("API_SJ"),
+        }
+        self.params = {
+            'count': 100,
+            'page': 1,
+        }
         self.url = 'https://api.superjob.ru/2.0/vacancies/'
+        self.vacancies = []
 
-    def get_vacancies(self):
-        """Выгрузка данных по 'Super_job' по запросам пользователя  по АПИ - ключу и возвращается словарь"""
+    def get_vacancies(self, words):
+        self.params['keywords'] = words
+        req = requests.get(self.url, params=self.params, headers=self.headers)
+        vacancies = json.loads(req.text)['objects']
+        self.vacancies = vacancies
+        return vacancies
 
-        headers = {
-                    'X-Api-App-Id': os.getenv('API_KEY_SJ'),
-                }
-        data = requests.get(self.url, headers=headers,params={'keywords': self.name, 'page': self.page, 'count': self.top_n}).json()
-        return data
-
-    def load_vacancy(self):
-        """Проходим циклом по словарю берем из словаря только нужные нам данные и записываем их в переменную 'vacancy_list_SJ' """
-        data = self.get_vacancies()
-        vacancy_list_SJ = []
-        for i in data['objects']:
-            published_at = datetime.fromtimestamp(i.get('date_published', ''))
-            super_job = {
-                'id': i['id'],
-                'name': i.get('profession', ''),
-                'solary_ot': i.get('payment_from', '') if i.get('payment_from') else None,
-                'solary_do': i.get('payment_to') if i.get('payment_to') else None,
-                'responsibility': i.get('candidat').replace('\n', '').replace('•', '') if i.get('candidat') else None,
-                'data': published_at.strftime("%d.%m.%Y"),
-
-            }
-            vacancy_list_SJ.append(super_job)
-        return vacancy_list_SJ
-
-def job_vacancy():
-    """Основной код проекта, после внесения пользователем данных, данные сортируются согласно запросу пользователя и вносятся в json файл
-       далее выбирается площадка для поиска вакансий если пользователь хочет еще просмотреть вакансии нажимает 'y' и подгружаются новые вакансии
-       и перезаписывается файл json и так до бесконечности"""
-    name = input('Введите вакансию: ')
-    top_n = input('Введите кол-во вакансий: ')
-    page = int(input('Введите страницу: '))
-    hh_instance = HH(name, page, top_n)
-    sj_instance = Super_job(name, page, top_n)
-    combined_dict = {'HH': hh_instance.load_vacancy(), 'SJ': sj_instance.load_vacancy()}
-
-
-    with open('Super_job.json', 'w', encoding='utf-8') as file:
-        json.dump(combined_dict, file, ensure_ascii=False, indent=2)
-
-
-    platforma = input('введите платформу для поиска: (1 - HH, 2 - SJ, 3 - обе платформы)  ')
-
-    if platforma =='3':
-        while True:
-            hh_instance.page = page
-            sj_instance.page = page
-            hh_data = hh_instance.load_vacancy()
-            sj_data = sj_instance.load_vacancy()
-
-            combined_dict['HH'] = hh_data
-            combined_dict['SJ'] = sj_data
-
-            with open('Super_job.json', 'w', encoding='utf-8') as file:
-                json.dump(combined_dict, file, ensure_ascii=False, indent=2)
-
-            for platform, data in combined_dict.items():
-                print(f"\n \033Платформа: {platform}")
-                for item in data:
-                    print(f"id - {item['id']}\nДолжность - {item['name']}\nЗ.п от - {item['solary_ot']}\nЗ.п до - {item['solary_do']}\nОписание - {item['responsibility']}\nДата - {item['data']}\n")
-
-            a = input('перейти на следующую страницу? y/n ')
-            if a == 'y':
-                page += 1
+    def format_vacancies(self):
+        result = []
+        for vacancy in self.vacancies:
+            if vacancy['payment_to']:
+                salary_ = int(vacancy['payment_to'])
+            elif vacancy['payment_from']:
+                salary_ = int(vacancy['payment_from'])
             else:
-                break
-    elif platforma =='1':
-        while True:
-            hh_instance.page = page
-            sj_instance.page = page
-            hh_data = hh_instance.load_vacancy()
-
-            combined_dict['HH'] = hh_data
-
-            with open('Super_job.json', 'w', encoding='utf-8') as file:
-                json.dump(combined_dict, file, ensure_ascii=False, indent=2)
-
-            for platform in combined_dict['HH']:
-                print(f"\nid - {platform['id']}\nДолжность - {platform['name']}\nЗ.п от - {platform['solary_ot']}\nЗ.п до - {platform['solary_ot']}\nОписание - {platform['responsibility']}\nДата - {platform['data']}\n")
-            a = input('перейти на следующую страницу? y/n ')
-            if a == 'y':
-                page += 1
-            else:
-                break
-
-    elif platforma =='2':
-        while True:
-            hh_instance.page = page
-            sj_instance.page = page
-            hh_data = hh_instance.load_vacancy()
-            sj_data = sj_instance.load_vacancy()
-
-            combined_dict['HH'] = hh_data
-            combined_dict['SJ'] = sj_data
-
-            with open('Super_job.json', 'w', encoding='utf-8') as file:
-                json.dump(combined_dict, file, ensure_ascii=False, indent=2)
-
-            for platform in combined_dict['SJ']:
-                print(f"\nid - {platform['id']}\nДолжность - {platform['name']}\nЗ.п от - {platform['solary_ot']}\nЗ.п до - {platform['solary_do']}\nОписание - {platform['responsibility']}\nДата - {platform['data']}\n")
-
-            a = input('перейти на следующую страницу? y/n ')
-            if a == 'y':
-                page += 1
-            else:
-                break
+                salary_ = 0
+            tmp = Vacancy(vacancy['profession'], vacancy['link'], salary_, vacancy['candidat'])
+            result.append(tmp)
+        return result
 
 
+class FileManager(ABC):
+
+    @abstractmethod
+    def check_vacancy(self, vacancy):
+        pass
+
+    @abstractmethod
+    def add_vacancy(self, vacancy):
+        pass
+
+    @abstractmethod
+    def save_to(self, vacancies):
+        pass
+
+    @abstractmethod
+    def delete_vacancy(self, vacancy):
+        pass
+
+
+class JsonManager(FileManager, Vacancy):
+
+    def __init__(self):
+        self.file = 'data.json'
+        with open(self.file, 'w', encoding='utf-8') as json_file:
+            json.dump([], json_file, ensure_ascii=False, indent=4)
+
+    def check_vacancy(self, vacancy: Vacancy):
+        vacancies = self.read_from()
+        return vacancy not in vacancies
+
+    def read_from(self):
+        vacancies = Vacancy.from_json(self.file)
+        return vacancies
+
+    def save_to(self, vacancies):
+        """
+        Функция для записи вакансий файл data.json
+        """
+        vac = []
+        if vacancies:
+            vac = [i.to_json() for i in vacancies]
+        with open(self.file, 'w', encoding='utf-8') as json_file:
+            json.dump(vac, json_file, ensure_ascii=False, indent=4)
+        print(f"Вакансии сохранены в файл {self.file}")
+
+    def add_vacancy(self, vacancy):
+        if self.check_vacancy(vacancy):
+            vacancies = self.read_from()
+            vacancies.append(vacancy.to_json())
+            with open(self.file, 'w', encoding='utf-8') as json_file:
+                json.dump(vacancies, json_file, ensure_ascii=False, indent=4)
+            print(f"{vacancy} - добавлено в файл {self.file}")
+
+    def delete_vacancy(self, vacancy: Vacancy):
+        vacancies = self.read_from()
+        for vacancy_ in vacancies:
+            if vacancy_ == vacancy:
+                vacancies.remove(vacancy)
+        with open(self.file, 'w', encoding='utf-8') as f:
+            json.dump(vacancies, f, ensure_ascii=False, indent=4)
+        print(f"{vacancy} - удалено из файла {self.file}")
+
+    def sort_vacancies_by_salary(self):
+        """
+        Сортирует вакансии по заработной плате (от большего к меньшему)
+        """
+        vacancies = Vacancy.from_json(self.file)
+        vac = [i.to_json() for i in vacancies]
+        with open(self.file, 'w', encoding='utf-8') as file:
+            json.dump(vac, file, ensure_ascii=False, indent=4)
+        print(f"Файл {self.file} отсортирован.")
