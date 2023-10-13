@@ -1,6 +1,4 @@
 import os
-
-
 import requests
 import json
 # from datetime import datetime
@@ -8,14 +6,28 @@ from abc import ABC, abstractmethod
 
 
 class Vacancy:
+    """Класс Вакансий"""
 
     def __init__(self, name, url, salary, requirements):
         if isinstance(name, str):
             self.name = name
+        else:
+            self.name = "Noname"
+
+        if isinstance(url, str):
             self.url = url
+        else:
+            self.url = None
+
+        if isinstance(requirements, str):
             self.requirements = requirements
+        else:
+            self.requirements = ""
+
         if isinstance(salary, int):
             self.salary = salary
+        else:
+            self.salary = 0
 
     def __eq__(self, other):
         return self.url == other.url
@@ -29,7 +41,15 @@ class Vacancy:
     def __repr__(self):
         return f'{self.name} {self.salary} {self.url}\n'
 
+    def show_info(self):
+        """Печать подробной информации"""
+        print(self.name)
+        print(self.url)
+        print(f'Заработная плата {self.salary}')
+        print(self.requirements)
+
     def to_json(self):
+        """Преобразует Vacancy в JSON"""
         return {
             'name': self.name,
             'url': self.url,
@@ -39,18 +59,18 @@ class Vacancy:
 
     @classmethod
     def from_json(cls, file):
+        """Считывает данные из файла и приводит его к списку Vacancy"""
         with open(file, 'r', encoding='utf-8') as f:
             vacancies = json.load(f)
         output = []
         for vacancy in vacancies:
             tmp = cls(vacancy['name'], vacancy['url'], vacancy['salary'], vacancy['requirements'])
             output.append(tmp)
-            output.sort(reverse=True)
         return output
 
 
 class API(ABC):
-
+    """Абстрактный класс API"""
     @abstractmethod
     def get_vacancies(self, words):
         pass
@@ -70,8 +90,7 @@ class HeadHunterAPI(API):
         self.vacancies = []
 
     def get_vacancies(self, words):
-        """
-        """
+        """Запрос по API """
         self.params['text'] = words
         req = requests.get(self.url, params=self.params)
         vacancies = json.loads(req.text)['items']
@@ -79,6 +98,7 @@ class HeadHunterAPI(API):
         return vacancies
 
     def format_vacancies(self):
+        """Создает список Vacancy из ответа API"""
         result = []
         for vacancy in self.vacancies:
             if vacancy['salary'] is None:
@@ -110,6 +130,7 @@ class SuperJobAPI(API):
         self.vacancies = []
 
     def get_vacancies(self, words):
+        """Запрос по API """
         self.params['keywords'] = words
         req = requests.get(self.url, params=self.params, headers=self.headers)
         vacancies = json.loads(req.text)['objects']
@@ -117,6 +138,7 @@ class SuperJobAPI(API):
         return vacancies
 
     def format_vacancies(self):
+        """Создает список Vacancy из ответа API"""
         result = []
         for vacancy in self.vacancies:
             if vacancy['payment_to']:
@@ -131,7 +153,7 @@ class SuperJobAPI(API):
 
 
 class FileManager(ABC):
-
+    """Абстрактный менеджер"""
     @abstractmethod
     def check_vacancy(self, vacancy):
         pass
@@ -150,24 +172,24 @@ class FileManager(ABC):
 
 
 class JsonManager(FileManager, Vacancy):
-
+    """Менеджер JSON"""
     def __init__(self):
         self.file = 'data.json'
         with open(self.file, 'w', encoding='utf-8') as json_file:
             json.dump([], json_file, ensure_ascii=False, indent=4)
 
     def check_vacancy(self, vacancy: Vacancy):
+        """Проверяет наличие одинаковых вакансий"""
         vacancies = self.read_from()
         return vacancy not in vacancies
 
     def read_from(self):
+        """Считывает данные файла и возвращает список типа Vacancy"""
         vacancies = Vacancy.from_json(self.file)
         return vacancies
 
     def save_to(self, vacancies):
-        """
-        Функция для записи вакансий файл data.json
-        """
+        """Записывает вакансии в файл"""
         vac = []
         if vacancies:
             vac = [i.to_json() for i in vacancies]
@@ -176,20 +198,24 @@ class JsonManager(FileManager, Vacancy):
         print(f"Вакансии сохранены в файл {self.file}")
 
     def add_vacancy(self, vacancy):
+        """Добавляет вакансию в файл"""
         if self.check_vacancy(vacancy):
             vacancies = self.read_from()
-            vacancies.append(vacancy.to_json())
+            vacancies.append(vacancy)
+            vac = [i.to_json() for i in vacancies]
             with open(self.file, 'w', encoding='utf-8') as json_file:
-                json.dump(vacancies, json_file, ensure_ascii=False, indent=4)
+                json.dump(vac, json_file, ensure_ascii=False, indent=4)
             print(f"{vacancy} - добавлено в файл {self.file}")
 
     def delete_vacancy(self, vacancy: Vacancy):
+        """Удаляет вакансию их файла по совпадению URL"""
         vacancies = self.read_from()
         for vacancy_ in vacancies:
             if vacancy_ == vacancy:
                 vacancies.remove(vacancy)
+        vac = [i.to_json() for i in vacancies]
         with open(self.file, 'w', encoding='utf-8') as f:
-            json.dump(vacancies, f, ensure_ascii=False, indent=4)
+            json.dump(vac, f, ensure_ascii=False, indent=4)
         print(f"{vacancy} - удалено из файла {self.file}")
 
     def sort_vacancies_by_salary(self):
@@ -197,6 +223,7 @@ class JsonManager(FileManager, Vacancy):
         Сортирует вакансии по заработной плате (от большего к меньшему)
         """
         vacancies = Vacancy.from_json(self.file)
+        vacancies.sort(reverse=True)
         vac = [i.to_json() for i in vacancies]
         with open(self.file, 'w', encoding='utf-8') as file:
             json.dump(vac, file, ensure_ascii=False, indent=4)
